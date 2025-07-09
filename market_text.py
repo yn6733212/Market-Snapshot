@@ -195,7 +195,7 @@ def get_market_report():
         report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
 
     report += "\nעוֹד בָּעוֹלָם:\n"
-    for name, unit in [("זָהָב", "לֵאוֹנְקִיָה"), ("נֵפְט", "לֵחָבִית"), ("דוֹלָר", "שְׁקָלִים")]:
+    for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
         d = results[name]
         direction = format_direction(d["pct"], d["trend"])
         report += f"{name} {direction} וֵנִמְצָא עָל {number_to_hebrew_words(d['price'])} {unit}.\n"
