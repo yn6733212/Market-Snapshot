@@ -1,90 +1,81 @@
+import asyncio
 import os
-import datetime
-import requests
 import subprocess
 import urllib.request
 import tarfile
 import warnings
 from edge_tts import Communicate
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from market_text import generate_market_text  # ייבוא מהקובץ המשני
+import requests
+from market_text import generate_market_text  # קובץ משני שמחזיר טקסט
 
 warnings.filterwarnings("ignore")
 
 # === פרטי התחברות לימות המשיח ===
 USERNAME = "0733181201"
 PASSWORD = "6714453"
-YEMOT_TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_URL = "https://www.call2all.co.il/ym/api/UploadFile"
-TARGET_PATH = "ivr2:/2"  # שלוחה 2
-
-# === קבצים ושמות ===
-MP3_FILE = "output.mp3"
-WAV_FILE = "output.wav"
+TOKEN = f"{USERNAME}:{PASSWORD}"
+TARGET_PATH = "ivr2:/2/"  # שנה לשלוחה שברצונך להעלות אליה
 FFMPEG_PATH = "./bin/ffmpeg"
 
-# === הורדת ffmpeg אם לא קיים ===
+# === מבטיח ש־ffmpeg מותקן ===
 def ensure_ffmpeg():
     if not os.path.exists(FFMPEG_PATH):
         print("⬇️ מוריד ffmpeg...")
         os.makedirs("bin", exist_ok=True)
         url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
         archive_path = "bin/ffmpeg.tar.xz"
+        extract_path = "bin"
         urllib.request.urlretrieve(url, archive_path)
         with tarfile.open(archive_path) as tar:
-            tar.extractall(path="bin")
-        # איתור הקובץ בפנים
-        for root, dirs, files in os.walk("bin"):
+            tar.extractall(path=extract_path)
+        for root, dirs, files in os.walk(extract_path):
             for file in files:
                 if file == "ffmpeg":
                     os.rename(os.path.join(root, file), FFMPEG_PATH)
-        os.chmod(FFMPEG_PATH, 0o755)
+                    os.chmod(FFMPEG_PATH, 0o755)
+                    break
 
-# === יצירת קובץ MP3 מהטקסט ===
-def create_mp3(text):
-    print("🎙️ יוצר MP3 מהטקסט...")
-    tts = Communicate(text=text, voice="he-IL-AvriNeural")
-    try:
-        import asyncio
-        asyncio.run(tts.save(MP3_FILE))
-    except Exception as e:
-        print(f"❌ שגיאה ביצירת MP3: {e}")
-        exit()
+# === ממיר טקסט ל־MP3 ===
+async def text_to_speech(text, filename):
+    communicate = Communicate(text, voice="he-IL-AvriNeural")
+    await communicate.save(filename)
 
-# === המרת MP3 ל־WAV תקני לימות המשיח ===
-def convert_to_wav():
-    print("🎛️ ממיר ל־WAV...")
-    subprocess.run([
-        FFMPEG_PATH, "-y", "-i", MP3_FILE,
-        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", WAV_FILE
-    ])
-
-# === העלאת WAV לימות המשיח ===
-def upload_to_yemot():
-    print("⏫ מעלה לימות המשיח...")
-    with open(WAV_FILE, "rb") as f:
-        m = MultipartEncoder(fields={
-            "token": YEMOT_TOKEN,
-            "path": TARGET_PATH,
-            "message": (WAV_FILE, f, "audio/wav")
-        })
-        response = requests.post(UPLOAD_URL, data=m, headers={"Content-Type": m.content_type})
-        if "ok" in response.text:
-            print("✅ הועלה בהצלחה!")
-        else:
-            print(f"❌ שגיאה בהעלאה: {response.text}")
-
-# === הרצה ===
-if __name__ == "__main__":
-    print("📊 מייצר טקסט תמונת שוק...")
-    try:
-        text = generate_market_text()
-        print("📝 הטקסט:\n", text)
-    except Exception as e:
-        print(f"❌ שגיאה בהפקת טקסט: {e}")
-        exit()
-
+# === ממיר מ־MP3 ל־WAV בפורמט של ימות המשיח ===
+def convert_to_wav(mp3_file, wav_file):
     ensure_ffmpeg()
-    create_mp3(text)
-    convert_to_wav()
-    upload_to_yemot()
+    with open(os.devnull, 'w') as devnull:
+        subprocess.run(
+            [FFMPEG_PATH, "-y", "-i", mp3_file, "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", wav_file],
+            stdout=devnull,
+            stderr=devnull
+        )
+
+# === מעלה לימות המשיח ===
+def upload_to_yemot(wav_file, path):
+    m = MultipartEncoder(fields={
+        'token': TOKEN,
+        'path': path + "001.wav",
+        'file': ("001.wav", open(wav_file, 'rb'), 'audio/wav')
+    })
+    r = requests.post("https://www.call2all.co.il/ym/api/UploadFile", data=m, headers={'Content-Type': m.content_type})
+    if r.ok:
+        print("✅ הועלה בהצלחה")
+    else:
+        print("❌ שגיאה בהעלאה:", r.text)
+
+# === פונקציית הרצה ראשית ===
+async def main():
+    print("📊 מייצר טקסט תמונת שוק...")
+    text = generate_market_text()
+    if not text:
+        print("⚠️ לא נוצר טקסט")
+        return
+
+    print("📝 הטקסט:\n", text)
+    await text_to_speech(text, "market.mp3")
+    convert_to_wav("market.mp3", "market.wav")
+    upload_to_yemot("market.wav", TARGET_PATH)
+
+if __name__ == "__main__":
+    asyncio.run(main())
