@@ -201,3 +201,6 @@ def get_market_report():
         report += f"{name} {direction} וֵנִמְצָא עָל {number_to_hebrew_words(d['price'])} {unit}.\n"
 
     return report
+
+def generate_market_text():
+    return get_market_report()
