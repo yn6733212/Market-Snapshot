@@ -1,90 +1,206 @@
-import os
+import yfinance as yf
 import datetime
-import requests
-import subprocess
-import urllib.request
-import tarfile
-import warnings
-from edge_tts import Communicate
-from requests_toolbelt.multipart.encoder import MultipartEncoder
-from market_text import generate_market_text  # ייבוא מהקובץ המשני
+import pytz
+from num2words import num2words
 
-warnings.filterwarnings("ignore")
+def number_to_hebrew_words(number):
+    parts = str(round(number, 2)).split(".")
+    if len(parts) == 1:
+        return num2words(int(parts[0]), lang='he')
+    else:
+        integer_part = num2words(int(parts[0]), lang='he')
+        decimal_part = num2words(int(parts[1]), lang='he')
+        return f"{integer_part} נֵקוּדָה {decimal_part}"
 
-# === פרטי התחברות לימות המשיח ===
-USERNAME = "0733181201"
-PASSWORD = "6714453"
-YEMOT_TOKEN = f"{USERNAME}:{PASSWORD}"
-UPLOAD_URL = "https://www.call2all.co.il/ym/api/UploadFile"
-TARGET_PATH = "ivr2:/2"  # שלוחה 2
+def get_time_segment(now):
+    hour = now.hour
+    if 6 <= hour < 12:
+        return "בָּבּוֹקֵר"
+    elif 12 <= hour < 18:
+        return "בָּצֹהֹרָיִים"
+    elif 18 <= hour < 23:
+        return "בָּעֵרֵב"
+    else:
+        return "בָּלָיְלָה"
 
-# === קבצים ושמות ===
-MP3_FILE = "output.mp3"
-WAV_FILE = "output.wav"
-FFMPEG_PATH = "./bin/ffmpeg"
+def get_stock_change(ticker):
+    stock = yf.Ticker(ticker)
+    hist = stock.history(period="5d", interval="1d")
+    if len(hist) < 3:
+        return None, None, None
+    current = hist["Close"].iloc[-1]
+    prev = hist["Close"].iloc[-2]
+    before_prev = hist["Close"].iloc[-3]
+    pct = ((current - prev) / prev) * 100
+    trend = None
+    if current > prev > before_prev:
+        trend = "מַמְשִׁיךְ לַעֲלוֹת"
+    elif current < prev < before_prev:
+        trend = "מַמְשִׁיךְ לְרֶדֶת"
+    return round(pct, 2), round(current, 2), trend
 
-# === הורדת ffmpeg אם לא קיים ===
-def ensure_ffmpeg():
-    if not os.path.exists(FFMPEG_PATH):
-        print("⬇️ מוריד ffmpeg...")
-        os.makedirs("bin", exist_ok=True)
-        url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-        archive_path = "bin/ffmpeg.tar.xz"
-        urllib.request.urlretrieve(url, archive_path)
-        with tarfile.open(archive_path) as tar:
-            tar.extractall(path="bin")
-        # איתור הקובץ בפנים
-        for root, dirs, files in os.walk("bin"):
-            for file in files:
-                if file == "ffmpeg":
-                    os.rename(os.path.join(root, file), FFMPEG_PATH)
-        os.chmod(FFMPEG_PATH, 0o755)
-
-# === יצירת קובץ MP3 מהטקסט ===
-def create_mp3(text):
-    print("🎙️ יוצר MP3 מהטקסט...")
-    tts = Communicate(text=text, voice="he-IL-AvriNeural")
-    try:
-        import asyncio
-        asyncio.run(tts.save(MP3_FILE))
-    except Exception as e:
-        print(f"❌ שגיאה ביצירת MP3: {e}")
-        exit()
-
-# === המרת MP3 ל־WAV תקני לימות המשיח ===
-def convert_to_wav():
-    print("🎛️ ממיר ל־WAV...")
-    subprocess.run([
-        FFMPEG_PATH, "-y", "-i", MP3_FILE,
-        "-ar", "8000", "-ac", "1", "-acodec", "pcm_s16le", WAV_FILE
-    ])
-
-# === העלאת WAV לימות המשיח ===
-def upload_to_yemot():
-    print("⏫ מעלה לימות המשיח...")
-    with open(WAV_FILE, "rb") as f:
-        m = MultipartEncoder(fields={
-            "token": YEMOT_TOKEN,
-            "path": TARGET_PATH,
-            "message": (WAV_FILE, f, "audio/wav")
-        })
-        response = requests.post(UPLOAD_URL, data=m, headers={"Content-Type": m.content_type})
-        if "ok" in response.text:
-            print("✅ הועלה בהצלחה!")
+def format_direction(pct, trend, threshold=1.5, is_female=False):
+    if pct is None:
+        return "לא זמין"
+    if trend:
+        base = trend
+    else:
+        if abs(pct) >= threshold:
+            base = "עוֹלֶה בֵּצוּרָה דְרָמָטִית" if pct > 0 else "יוֹרֵד בְּצוּרָה דְרָמָטִית"
         else:
-            print(f"❌ שגיאה בהעלאה: {response.text}")
+            base = "עוֹלֵה" if pct > 0 else "יוֹרֵד"
+    if is_female:
+        base = base.replace("עוֹלֶה", "עוֹלָה").replace("יוֹרֵד", "יוֹרֶדֶת").replace("מַמְשִׁיךְ", "מַמְשִׁיכָה")
+    return base
 
-# === הרצה ===
-if __name__ == "__main__":
-    print("📊 מייצר טקסט תמונת שוק...")
-    try:
-        text = generate_market_text()
-        print("📝 הטקסט:\n", text)
-    except Exception as e:
-        print(f"❌ שגיאה בהפקת טקסט: {e}")
-        exit()
+def get_market_report():
+    tickers = {
+        "תֵל אָבִיב-125": "^TA125.TA",
+        "תֵל אָבִיב-35": "TA35.TA",
+        "SPY": "SPY",
+        "QQQ": "QQQ",
+        "DIA": "DIA",
+        "IWM": "IWM",
+        "הָבִּיטְקוֹיְן": "BTC-USD",
+        "הָאִיתֵרְיוּם": "ETH-USD",
+        "הָזָהָב": "GC=F",
+        "הָנֵפְט": "CL=F",
+        "הָדוֹלָר": "USDILS=X",
+        "אָפֵּל": "AAPL",
+        "אֵנְבִידְיָה": "NVDA",
+        "אָמָזוֹן": "AMZN",
+        "טֵסְלָה": "TSLA"
+    }
 
-    ensure_ffmpeg()
-    create_mp3(text)
-    convert_to_wav()
-    upload_to_yemot()
+    now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
+    hour_str = now.strftime("%H:%M")
+    segment = get_time_segment(now)
+
+    report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
+    results = {}
+
+    for name, ticker in tickers.items():
+        try:
+            pct, price, trend = get_stock_change(ticker)
+            results[name] = {"pct": pct, "price": price, "trend": trend}
+        except:
+            results[name] = {"pct": None, "price": None, "trend": None}
+
+    open_time = now.replace(hour=9, minute=59)
+    close_time = now.replace(hour=17, minute=25)
+    ta125 = results["תֵל אָבִיב-125"]
+    ta35 = results["תֵל אָבִיב-35"]
+
+    if now < open_time:
+        delta = open_time - now
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes = remainder // 60
+        report += f"בֵּּיִשְׂרָאֵל:\nבּוּרְסָת תֵל אָבִיב טֶרֶם נִפְתְּחָה וְצָפוּיָה לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+    elif now > close_time:
+        verb1 = "עָלָה" if ta125["pct"] > 0 else "יָרָד"
+        verb2 = "עָלָה" if ta35["pct"] > 0 else "יָרָד"
+        report += f"בֵּיִשְׂרָאֵל:\nהָבּוּרְסָה נִסְגֵרָה.\nמָדָד תֵל אָבִיב-125 {verb1} בֵּ{number_to_hebrew_words(abs(ta125['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta125['price'])} נְקוּדוֹת.\n"
+        report += f"מָדָד תֵל אָבִיב-35 {verb2} בֵּ{number_to_hebrew_words(abs(ta35['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta35['price'])} נְקוּדוֹת.\n"
+    else:
+        report += f"בֵּיִשְׂרָאֵל:\n"
+        for name in ["תֵל אָבִיב-125", "תֵל אָבִיב-35"]:
+            d = results[name]
+            direction = format_direction(d["pct"], d["trend"])
+            report += f"מָדָד {name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+
+    ny_open = now.replace(hour=16, minute=30)
+    ny_close = now.replace(hour=23, minute=0)
+    spy = results["SPY"]
+    qqq = results["QQQ"]
+    dia = results["DIA"]
+    iwm = results["IWM"]
+
+    indices = {
+        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": spy,
+        "הָנָאסְדָק": qqq,
+        "הָדָאוֹ ג'וֹנְס": dia,
+        "הָרָאסֵל": iwm
+    }
+
+    if now < ny_open:
+        if all(d["pct"] is None for d in indices.values()):
+            delta = ny_open - now
+            hours, remainder = divmod(int(delta.total_seconds()), 3600)
+            minutes = remainder // 60
+            report += "\nבְּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת סְגוּרוֹת. הַשַּׁעַר הָאָחָרוֹן:\n"
+            for name, d in indices.items():
+                report += f"{name} עוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+            report += f"הָמִסְחָר צָפוּי לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+        else:
+            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הַמוּקְדָם.\n"
+            for name, d in indices.items():
+                direction = format_direction(d["pct"], d["trend"])
+                report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+    elif now > ny_close:
+        if all(d["pct"] is None for d in indices.values()):
+            report += "\nהָבּוּרְסוֹת בֵּאָמֵרִיקָה סְגוּרוֹת. הָשָעָר הָאָחָרוֹן:\n"
+            for name, d in indices.items():
+                report += f"{name} עוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+        else:
+            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הָמֵאוּחָר.\n"
+            for name, d in indices.items():
+                direction = format_direction(d["pct"], d["trend"])
+                report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+    else:
+        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
+        for name, d in indices.items():
+            direction = format_direction(d["pct"], d["trend"])
+            report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+
+    # מניות
+    stocks = ["אָפֵּל", "אֵנְבִידְיָה", "אָמָזוֹן", "טֵסְלָה"]
+    stock_data = [results[s] for s in stocks]
+
+    if now < ny_open:
+        if all(d["pct"] is None for d in stock_data):
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
+            for stock in stocks:
+                price = results[stock]["price"]
+                report += f"מֵנָיָת {stock} נִסְחֵרֵת לֵפִי {number_to_hebrew_words(price)} דוֹלָר.\n"
+        else:
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה טֵרֵם נִפְתֵחָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמוּקְדָם.\n"
+            for stock in stocks:
+                d = results[stock]
+                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
+                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+    elif now > ny_close:
+        if all(d["pct"] is None for d in stock_data):
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
+            for stock in stocks:
+                price = results[stock]["price"]
+                report += f"מֵנָיָת {stock} נִסְחֵרֵת בֵּשָעָר שֵׁל {number_to_hebrew_words(price)} דוֹלָר.\n"
+        else:
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
+            for stock in stocks:
+                d = results[stock]
+                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
+                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+    else:
+        report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
+        for stock in stocks:
+            d = results[stock]
+            direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
+            report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+
+    # קריפטו וזהב
+    report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
+    for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
+        d = results[name]
+        direction = format_direction(d["pct"], d["trend"], is_female=(name == "הָאִיתֵרְיוּם"))
+        report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+
+    report += "\nעוֹד בָּעוֹלָם:\n"
+    for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
+        d = results[name]
+        direction = format_direction(d["pct"], d["trend"])
+        report += f"{name} {direction} וֵנִמְצָא עָל {number_to_hebrew_words(d['price'])} {unit}.\n"
+
+    return report
+
+def generate_market_text():
+    return get_market_report()
