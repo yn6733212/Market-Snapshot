@@ -1,4 +1,6 @@
-flask
 yfinance
 pytz
 num2words
+edge-tts
+requests
+requests-toolbelt
