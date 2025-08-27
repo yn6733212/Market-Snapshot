@@ -15,13 +15,13 @@ def number_to_hebrew_words(number):
 def get_time_segment(now):
     hour = now.hour
     if 6 <= hour < 12:
-        return "בָּבּוֹקֵר"
+        return "בָּבּוֹקֵר"
     elif 12 <= hour < 18:
-        return "בָּצֹהֹרָיִים"
+        return "בָּצֹהֹרָיִים"
     elif 18 <= hour < 23:
-        return "בָּעֵרֵב"
+        return "בָּעֵרֵב"
     else:
-        return "בָּלָיְלָה"
+        return "בָּלָיְלָה"
 
 def get_stock_change(ticker):
     stock = yf.Ticker(ticker)
@@ -34,9 +34,9 @@ def get_stock_change(ticker):
     pct = ((current - prev) / prev) * 100
     trend = None
     if current > prev > before_prev:
-        trend = "מַמְשִׁיךְ לַעֲלוֹת"
+        trend = "מַמְשִׁיךְ לַעֲלוֹת"
     elif current < prev < before_prev:
-        trend = "מַמְשִׁיךְ לְרֶדֶת"
+        trend = "מַמְשִׁיךְ לְרֶדֶת"
     return round(pct, 2), round(current, 2), trend
 
 def format_direction(pct, trend, threshold=1.5, is_female=False):
@@ -46,11 +46,11 @@ def format_direction(pct, trend, threshold=1.5, is_female=False):
         base = trend
     else:
         if abs(pct) >= threshold:
-            base = "עוֹלֶה בֵּצוּרָה דְרָמָטִית" if pct > 0 else "יוֹרֵד בְּצוּרָה דְרָמָטִית"
+            base = "עוֹלֶה בֵּצוּרָה דְרָמָטִית" if pct > 0 else "יוֹרֵד בְּצוּרָה דְרָמָטִית"
         else:
-            base = "עוֹלֵה" if pct > 0 else "יוֹרֵד"
+            base = "עוֹלֶה" if pct > 0 else "יוֹרֵד"
     if is_female:
-        base = base.replace("עוֹלֶה", "עוֹלָה").replace("יוֹרֵד", "יוֹרֶדֶת").replace("מַמְשִׁיךְ", "מַמְשִׁיכָה")
+        base = base.replace("עוֹלֶה", "עוֹלָה").replace("יוֹרֵד", "יוֹרֶדֶת").replace("מַמְשִׁיךְ", "מַמְשִׁיכָה")
     return base
 
 def get_market_report():
@@ -73,7 +73,13 @@ def get_market_report():
     }
 
     now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
-    hour_str = now.strftime("%H:%M")
+    
+    # שינוי 1: התאמת השעה
+    hour_24 = now.hour
+    hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
+    minute = now.minute
+    hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַקוֹת"
+    
     segment = get_time_segment(now)
 
     report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
@@ -95,28 +101,31 @@ def get_market_report():
         delta = open_time - now
         hours, remainder = divmod(int(delta.total_seconds()), 3600)
         minutes = remainder // 60
-        report += f"בֵּּיִשְׂרָאֵל:\nבּוּרְסָת תֵל אָבִיב טֶרֶם נִפְתְּחָה וְצָפוּיָה לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+        report += f"בֵּּיִשְׂרָאֵל:\nבּוּרְסָת תֵל אָבִיב טֶרֶם נִפְתְּחָה וְצָפוּיָה לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
     elif now > close_time:
         verb1 = "עָלָה" if ta125["pct"] > 0 else "יָרָד"
         verb2 = "עָלָה" if ta35["pct"] > 0 else "יָרָד"
-        report += f"בֵּיִשְׂרָאֵל:\nהָבּוּרְסָה נִסְגֵרָה.\nמָדָד תֵל אָבִיב-125 {verb1} בֵּ{number_to_hebrew_words(abs(ta125['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta125['price'])} נְקוּדוֹת.\n"
-        report += f"מָדָד תֵל אָבִיב-35 {verb2} בֵּ{number_to_hebrew_words(abs(ta35['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta35['price'])} נְקוּדוֹת.\n"
+        # שינוי 2: תיקון מדדי תל אביב
+        report += f"בֵּיִשְׂרָאֵל:\nהָבּוּרְסָה נִסְגֵרָה.\nמָדָד תֵל אָבִיב-125 {verb1} בֵּ{number_to_hebrew_words(abs(ta125['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta125['price'])} נְקוּדוֹת.\n"
+        report += f"מָדָד תֵל אָבִיב-35 {verb2} בֵּ{number_to_hebrew_words(abs(ta35['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta35['price'])} נְקוּדוֹת.\n"
     else:
         report += f"בֵּיִשְׂרָאֵל:\n"
         for name in ["תֵל אָבִיב-125", "תֵל אָבִיב-35"]:
             d = results[name]
             direction = format_direction(d["pct"], d["trend"])
-            report += f"מָדָד {name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+            report += f"מָדָד {name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
 
     ny_open = now.replace(hour=16, minute=30)
     ny_close = now.replace(hour=23, minute=0)
+    
+    # שינוי 3: מעבר ל-ETF במקום מדדים אמריקאים
     spy = results["SPY"]
     qqq = results["QQQ"]
     dia = results["DIA"]
     iwm = results["IWM"]
 
     indices = {
-        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": spy,
+        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": spy,
         "הָנָאסְדָק": qqq,
         "הָדָאוֹ ג'וֹנְס": dia,
         "הָרָאסֵל": iwm
@@ -127,29 +136,32 @@ def get_market_report():
             delta = ny_open - now
             hours, remainder = divmod(int(delta.total_seconds()), 3600)
             minutes = remainder // 60
-            report += "\nבְּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת סְגוּרוֹת. הַשַּׁעַר הָאָחָרוֹן:\n"
+            report += "\nבְּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת סְגוּרוֹת. הַשַּׁעַר הָאָחָרוֹן:\n"
             for name, d in indices.items():
                 report += f"{name} עוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
-            report += f"הָמִסְחָר צָפוּי לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+            report += f"הָמִסְחָר צָפוּי לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
         else:
-            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הַמוּקְדָם.\n"
+            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הַמוּקְדָם.\n"
             for name, d in indices.items():
                 direction = format_direction(d["pct"], d["trend"])
-                report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+                # שינוי 3: הסרת "ועומד על"
+                report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     elif now > ny_close:
         if all(d["pct"] is None for d in indices.values()):
             report += "\nהָבּוּרְסוֹת בֵּאָמֵרִיקָה סְגוּרוֹת. הָשָעָר הָאָחָרוֹן:\n"
             for name, d in indices.items():
                 report += f"{name} עוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
         else:
-            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הָמֵאוּחָר.\n"
+            report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לָמִסְחָר הָמֵאוּחָר.\n"
             for name, d in indices.items():
                 direction = format_direction(d["pct"], d["trend"])
-                report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+                # שינוי 3: הסרת "ועומד על"
+                report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     else:
-        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
+        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
         for name, d in indices.items():
             direction = format_direction(d["pct"], d["trend"])
+            # שינוי 3: הוספת "ועומד על"
             report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
 
     # מניות
@@ -158,43 +170,46 @@ def get_market_report():
 
     if now < ny_open:
         if all(d["pct"] is None for d in stock_data):
-            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
             for stock in stocks:
                 price = results[stock]["price"]
                 report += f"מֵנָיָת {stock} נִסְחֵרֵת לֵפִי {number_to_hebrew_words(price)} דוֹלָר.\n"
         else:
-            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה טֵרֵם נִפְתֵחָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמוּקְדָם.\n"
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה טֵרֵם נִפְתֵחָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמוּקְדָם.\n"
             for stock in stocks:
                 d = results[stock]
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+                # שינוי 3: הסרת "ועומד על"
+                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     elif now > ny_close:
         if all(d["pct"] is None for d in stock_data):
-            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה. הָנֵתוּנִים מִתְיָחָסִים לֵמֵחִיר הָסְגִירָה בִּלְבָד.\n"
             for stock in stocks:
                 price = results[stock]["price"]
                 report += f"מֵנָיָת {stock} נִסְחֵרֵת בֵּשָעָר שֵׁל {number_to_hebrew_words(price)} דוֹלָר.\n"
         else:
-            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
+            report += "\nבֵּשוּק הָמֵנָיוֹת:\nהָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
             for stock in stocks:
                 d = results[stock]
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+                # שינוי 3: הסרת "ועומד על"
+                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     else:
-        report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
+        report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
         for stock in stocks:
             d = results[stock]
             direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-            report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+            # שינוי 3: הוספת "ועומד על"
+            report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
 
     # קריפטו וזהב
     report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
     for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
         d = results[name]
         direction = format_direction(d["pct"], d["trend"], is_female=(name == "הָאִיתֵרְיוּם"))
-        report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+        report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
 
-    report += "\nעוֹד בָּעוֹלָם:\n"
+    report += "\nעוֹד בָּעוֹלָם:\n"
     for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
         d = results[name]
         direction = format_direction(d["pct"], d["trend"])
