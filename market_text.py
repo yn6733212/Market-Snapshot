@@ -4,22 +4,32 @@ import pytz
 from num2words import num2words
 
 def number_to_hebrew_words(number):
-    rounded_number = round(number, 2)
-    parts = str(rounded_number).split(".")
-    integer_part = int(parts[0])
+    """
+    Translates a number to Hebrew words, handling the decimal part as a whole number.
+    """
+    # Ensure the number is a float and round it to two decimal places
+    try:
+        rounded_number = round(float(number), 2)
+    except (ValueError, TypeError):
+        return str(number)
 
-    if len(parts) > 1 and int(parts[1]) > 0:
-        decimal_part = int(parts[1])
-        integer_words = num2words(integer_part, lang='he')
-        decimal_words = num2words(decimal_part, lang='he')
+    # Convert the rounded number to a string to handle integer and decimal parts
+    number_str = str(rounded_number)
+    
+    # Check for a decimal point
+    if '.' in number_str:
+        integer_part, decimal_part = number_str.split('.')
         
-        # Handle cases like "0.32"
-        if integer_part == 0:
-            return f"{decimal_words} מֵאִיּוֹת"
+        # Translate the integer part to words
+        integer_words = num2words(int(integer_part), lang='he')
+        
+        # Translate the decimal part as a single number
+        decimal_words = num2words(int(decimal_part), lang='he')
         
         return f"{integer_words} נֵקוּדָה {decimal_words}"
     else:
-        return num2words(integer_part, lang='he')
+        # If no decimal part, translate the integer part normally
+        return num2words(int(number), lang='he')
 
 def get_time_segment(now):
     hour = now.hour
@@ -33,20 +43,23 @@ def get_time_segment(now):
         return "בָּלָיְלָה"
 
 def get_stock_change(ticker):
-    stock = yf.Ticker(ticker)
-    hist = stock.history(period="5d", interval="1d")
-    if len(hist) < 3:
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="5d", interval="1d")
+        if len(hist) < 3:
+            return None, None, None
+        current = hist["Close"].iloc[-1]
+        prev = hist["Close"].iloc[-2]
+        before_prev = hist["Close"].iloc[-3]
+        pct = ((current - prev) / prev) * 100
+        trend = None
+        if current > prev > before_prev:
+            trend = "מַמְשִׁיךְ לַעֲלוֹת"
+        elif current < prev < before_prev:
+            trend = "מַמְשִׁיךְ לְרֶדֶת"
+        return round(pct, 2), round(current, 2), trend
+    except Exception:
         return None, None, None
-    current = hist["Close"].iloc[-1]
-    prev = hist["Close"].iloc[-2]
-    before_prev = hist["Close"].iloc[-3]
-    pct = ((current - prev) / prev) * 100
-    trend = None
-    if current > prev > before_prev:
-        trend = "מַמְשִׁיךְ לַעֲלוֹת"
-    elif current < prev < before_prev:
-        trend = "מַמְשִׁיךְ לְרֶדֶת"
-    return round(pct, 2), round(current, 2), trend
 
 def format_direction(pct, trend, threshold=1.5, is_female=False):
     if pct is None:
@@ -55,7 +68,7 @@ def format_direction(pct, trend, threshold=1.5, is_female=False):
         base = trend
     else:
         if abs(pct) >= threshold:
-            base = "עוֹלֶה בֵּצוּרָה דְרָמָטִית" if pct > 0 else "יוֹרֵד בְּצוּרָה דְרָמָטִית"
+            base = "עוֹלֶה בְּצוּרָה דְרָמָטִית" if pct > 0 else "יוֹרֵד בְּצוּרָה דְרָמָטִית"
         else:
             base = "עוֹלֶה" if pct > 0 else "יוֹרֵד"
     if is_female:
@@ -64,7 +77,7 @@ def format_direction(pct, trend, threshold=1.5, is_female=False):
 
 def get_market_report():
     tickers = {
-        "תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש": "^TA125.TA",
+        "תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש": "^TA125.TA",
         "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש": "TA35.TA",
         "SPX": "^GSPC",
         "QQQ": "QQQ",
@@ -86,41 +99,41 @@ def get_market_report():
     hour_24 = now.hour
     hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
     minute = now.minute
-    hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַקוֹת"
-
+    
+    # Handle the time string correctly
+    hour_str = f"{num2words(hour_12, lang='he')} וְ{num2words(minute, lang='he')} דַּקוֹת"
+    
     segment = get_time_segment(now)
 
     report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
     results = {}
 
     for name, ticker in tickers.items():
-        try:
-            pct, price, trend = get_stock_change(ticker)
-            results[name] = {"pct": pct, "price": price, "trend": trend}
-        except:
-            results[name] = {"pct": None, "price": None, "trend": None}
+        pct, price, trend = get_stock_change(ticker)
+        results[name] = {"pct": pct, "price": price, "trend": trend}
 
     open_time = now.replace(hour=9, minute=59)
     close_time = now.replace(hour=17, minute=25)
-    ta125 = results["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש"]
+    ta125 = results["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש"]
     ta35 = results["תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש"]
 
     if now < open_time:
         delta = open_time - now
         hours, remainder = divmod(int(delta.total_seconds()), 3600)
         minutes = remainder // 60
-        report += f"בֵּּיִשְׂרָאֵל:\nבּוּרְסָת תֵל אָבִיב טֶרֶם נִפְתְּחָה וּצְפוּיָה לֵהִיפָּתָח בֵּעוֹד {number_to_hebrew_words(hours)} שָעוֹת וֵ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+        report += f"בֵּּיִשְׂרָאֵל:\nבּוּרְסָת תֵל אָבִיב טֶרֶם נִפְתְּחָה וּצְפוּיָה לֵהִיפָּתָח בֵּעוֹד {num2words(hours, lang='he')} שָעוֹת וֵ-{num2words(minutes, lang='he')} דָקוֹת.\n"
     elif now > close_time:
         verb1 = "עָלָה" if ta125["pct"] > 0 else "יָרָד"
         verb2 = "עָלָה" if ta35["pct"] > 0 else "יָרָד"
-        report += f"בֵּיִשְׂרָאֵל:\nהָבּוּרְסָה נִסְגֵרָה.\nמָדָד תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש {verb1} בֵּ{number_to_hebrew_words(abs(ta125['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta125['price'])} נְקוּדוֹת.\n"
+        report += f"בֵּיִשְׂרָאֵל:\nהָבּוּרְסָה נִסְגֵרָה.\nמָדָד תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש {verb1} בֵּ{number_to_hebrew_words(abs(ta125['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta125['price'])} נְקוּדוֹת.\n"
         report += f"מָדָד תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש {verb2} בֵּ{number_to_hebrew_words(abs(ta35['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(ta35['price'])} נְקוּדוֹת.\n"
     else:
         report += f"בֵּיִשְׂרָאֵל:\n"
-        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש", "תֵל אָבִיב שְׁלוֹשִים וֵחָמֵש"]:
+        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש", "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש"]:
             d = results[name]
-            direction = format_direction(d["pct"], d["trend"])
-            report += f"מָדָד {name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+            if d['pct'] is not None and d['price'] is not None:
+                direction = format_direction(d["pct"], d["trend"])
+                report += f"מָדָד {name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
 
     ny_open = now.replace(hour=16, minute=30)
     ny_close = now.replace(hour=23, minute=0)
