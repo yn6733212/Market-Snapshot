@@ -2,6 +2,7 @@ import yfinance as yf
 import datetime
 import pytz
 from num2words import num2words
+import pandas as pd
 
 def number_to_hebrew_words(number):
     rounded_number = round(number, 2)
@@ -12,10 +13,8 @@ def number_to_hebrew_words(number):
         decimal_part = int(parts[1])
         integer_words = num2words(integer_part, lang='he')
         
-        # המרת החלק העשרוני למילים
         decimal_words = num2words(decimal_part, lang='he')
         
-        # טיפול במקרה של מספר קטן מ-1
         if integer_part == 0:
             return f"אֵפֶס נְקוּדָה {decimal_words}"
         
@@ -36,19 +35,34 @@ def get_time_segment(now):
 
 def get_stock_change(ticker):
     stock = yf.Ticker(ticker)
-    hist = stock.history(period="5d", interval="1d")
+    hist = stock.history(period="10d", interval="1d")
+    
     if len(hist) < 3:
         return None, None, None
-    current = hist["Close"].iloc[-1]
-    prev = hist["Close"].iloc[-2]
-    before_prev = hist["Close"].iloc[-3]
-    pct = ((current - prev) / prev) * 100
-    trend = None
-    if current > prev > before_prev:
-        trend = "מַמְשִׁיךְ לַעֲלוֹת"
-    elif current < prev < before_prev:
-        trend = "מַמְשִׁיךְ לְרֶדֶת"
-    return round(pct, 2), round(current, 2), trend
+
+    hist = hist.dropna(subset=['Close'])
+    
+    # Check for recent data to decide if market is active
+    is_recent_data = (datetime.datetime.now(pytz.timezone("Asia/Jerusalem")) - hist.index[-1].tz_localize("Asia/Jerusalem")).total_seconds() < 24 * 3600
+
+    if is_recent_data:
+        current = hist["Close"].iloc[-1]
+        prev = hist["Close"].iloc[-2]
+        before_prev = hist["Close"].iloc[-3]
+        pct = ((current - prev) / prev) * 100
+        trend = None
+        if current > prev > before_prev:
+            trend = "מַמְשִׁיךְ לַעֲלוֹת"
+        elif current < prev < before_prev:
+            trend = "מַמְשִׁיךְ לְרֶדֶת"
+        return round(pct, 2), round(current, 2), trend
+    else:
+        # Get data from last trading day
+        last_close = hist["Close"].iloc[-1]
+        prev_close = hist["Close"].iloc[-2]
+        pct = ((last_close - prev_close) / prev_close) * 100
+        return round(pct, 2), round(last_close, 2), None
+
 
 def format_direction(pct, trend, threshold=1.5, is_female=False):
     if pct is None:
@@ -68,40 +82,67 @@ def get_market_report():
     tickers = {
         "תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש": "^TA125.TA",
         "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש": "TA35.TA",
-        "SPX": "^GSPC",
-        "QQQ": "QQQ",
-        "DIA": "DIA",
-        "IWM": "IWM",
         "הָבִּיטְקוֹיְן": "BTC-USD",
         "הָאִיתֵרְיוּם": "ETH-USD",
         "הָזָהָב": "GC=F",
         "הָנֵפְט": "CL=F",
-        "הָדוֹלָר": "USDILS=X",
-        "אָפֵּל": "AAPL",
-        "אֵנְבִידְיָה": "NVDA",
-        "אָמָזוֹן": "AMZN",
-        "טֵסְלָה": "TSLA"
+        "הָדוֹלָר": "USDILS=X"
     }
 
+    # New dictionary for US tickers to manage their specific behavior
+    us_indices = {
+        "מדד האס אנד פי חמש מאות": "^GSPC",
+        "הנאסדק": "^IXIC",
+        "הדאו ג'ונס": "^DJI",
+        "הראסל": "^RUT"
+    }
+    us_etfs = {
+        "מדד האס אנד פי חמש מאות": "SPY",
+        "הנאסדק": "QQQ",
+        "הדאו ג'ונס": "DIA",
+        "הראסל": "IWM"
+    }
+    us_stocks = {
+        "אפל": "AAPL",
+        "אנבידיה": "NVDA",
+        "אמזון": "AMZN",
+        "טסלה": "TSLA"
+    }
+    
     now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
+    is_us_market_closed_weekend = now.weekday() in [5, 6]  # 5=Saturday, 6=Sunday
 
     hour_24 = now.hour
     hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
     minute = now.minute
     hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַקוֹת"
-
     segment = get_time_segment(now)
 
     report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
     results = {}
 
+    # Get data for non-US tickers
     for name, ticker in tickers.items():
         try:
             pct, price, trend = get_stock_change(ticker)
             results[name] = {"pct": pct, "price": price, "trend": trend}
-        except:
+        except Exception:
             results[name] = {"pct": None, "price": None, "trend": None}
 
+    # Get data for US tickers based on market status
+    if is_us_market_closed_weekend:
+        us_tickers_to_fetch = us_indices
+    else:
+        # Use ETFs for pre/after market data
+        us_tickers_to_fetch = {**us_etfs, **us_stocks}
+
+    for name, ticker in us_tickers_to_fetch.items():
+        try:
+            pct, price, trend = get_stock_change(ticker)
+            results[name] = {"pct": pct, "price": price, "trend": trend}
+        except Exception:
+            results[name] = {"pct": None, "price": None, "trend": None}
+            
     open_time = now.replace(hour=9, minute=59)
     close_time = now.replace(hour=17, minute=25)
     ta125 = results["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש"]
@@ -126,64 +167,73 @@ def get_market_report():
 
     ny_open = now.replace(hour=16, minute=30)
     ny_close = now.replace(hour=23, minute=0)
+
+    # US market report logic
+    report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
     
-    spy_data = results.get("SPX")
-    qqq_data = results.get("QQQ")
-    dia_data = results.get("DIA")
-    iwm_data = results.get("IWM")
-
-    indices = {
-        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": spy_data,
-        "הָנָאסְדָק": qqq_data,
-        "הָדָאוֹ ג'וֹנְס": dia_data,
-        "הָרָאסֵל": iwm_data
-    }
-
-    if now < ny_open:
-        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הַמוּקְדָם.\n"
-        for name, d in indices.items():
+    if is_us_market_closed_weekend:
+        report += "הַבּוּרְסוֹת סְגוּרוֹת, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הָאַחֲרוֹן.\n"
+        for name in us_indices.keys():
+            d = results.get(name)
+            if d and d["pct"] is not None:
+                verb = "עָלָה" if d["pct"] > 0 else "יָרָד"
+                report += f"{name} {verb} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
+    elif now < ny_open:
+        report += "הַבּוּרְסוֹת טֶרֶם נִפְתֵחוּ, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הַמוּקְדָם.\n"
+        for name in us_etfs.keys():
+            d = results.get(name)
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"])
                 report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     elif now > ny_close:
-        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\nהַבּוּרְסוֹת סְגוּרוֹת, הַנְתוּנִים מִתְיַחֲסִים לָמִסְחָר הָמֵאוּחָר.\n"
-        for name, d in indices.items():
+        report += "הַבּוּרְסוֹת סְגוּרוֹת, הַנְתוּנִים מִתְיַחֲסִים לָמִסְחָר הָמֵאוּחָר.\n"
+        for name in us_etfs.keys():
+            d = results.get(name)
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"])
                 report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     else:
-        report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
-        for name, d in indices.items():
+        for name in us_etfs.keys():
+            d = results.get(name)
             if d and d["pct"] is not None and d["price"] is not None:
                 direction = format_direction(d["pct"], d["trend"])
                 report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
 
-    # מניות
-    stocks = ["אָפֵּל", "אֵנְבִידְיָה", "אָמָזוֹן", "טֵסְלָה"]
-    
+    # Stocks report logic
     report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
-    if now < ny_open:
+    
+    if is_us_market_closed_weekend:
+        report += "הָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לַמִסְחָר הָאַחֲרוֹן.\n"
+        for stock_name, ticker in us_stocks.items():
+            try:
+                pct, price, trend = get_stock_change(ticker)
+                if pct is not None:
+                    verb = "עָלָה" if pct > 0 else "יָרָד"
+                    report += f"מֵנָיָת {stock_name} {verb} בֵּ{number_to_hebrew_words(abs(pct))} אָחוּז וֵנִסְחֵרָה בֵּשָׁעָר שֵׁל {number_to_hebrew_words(price)} דוֹלָר.\n"
+            except:
+                pass # Skip if data is not available
+    elif now < ny_open:
         report += "הָבּוּרְסָה טֵרֵם נִפְתֵחָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמוּקְדָם.\n"
-        for stock in stocks:
-            d = results.get(stock)
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
+                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     elif now > ny_close:
         report += "הָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
-        for stock in stocks:
-            d = results.get(stock)
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
+                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
     else:
-        for stock in stocks:
-            d = results.get(stock)
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
             if d and d["pct"] is not None and d["price"] is not None:
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
 
-    # קריפטו וזהב
+    # Crypto and other assets
     report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
     for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
         d = results.get(name)
