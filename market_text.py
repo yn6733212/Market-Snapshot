@@ -8,15 +8,14 @@ def number_to_hebrew_words(number):
     parts = str(rounded_number).split(".")
     integer_part = int(parts[0])
 
-    if len(parts) > 1:
-        decimal_str = parts[1]
-        decimal_words_list = []
-        for digit in decimal_str:
-            decimal_words_list.append(num2words(int(digit), lang='he'))
-        decimal_words = " ".join(decimal_words_list)
-        
+    if len(parts) > 1 and int(parts[1]) > 0:
+        decimal_part = int(parts[1])
         integer_words = num2words(integer_part, lang='he')
         
+        # המרת החלק העשרוני למילים
+        decimal_words = num2words(decimal_part, lang='he')
+        
+        # טיפול במקרה של מספר קטן מ-1
         if integer_part == 0:
             return f"אֵפֶס נְקוּדָה {decimal_words}"
         
