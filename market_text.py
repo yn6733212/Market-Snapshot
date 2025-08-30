@@ -42,7 +42,8 @@ def get_stock_change(ticker):
 
     hist = hist.dropna(subset=['Close'])
     
-    # Check for recent data to decide if market is active
+    # Check if the last data point is from today's trading session
+    # We check if the last data point is within the last 24 hours
     is_recent_data = (datetime.datetime.now(pytz.timezone("Asia/Jerusalem")) - hist.index[-1].tz_localize("Asia/Jerusalem")).total_seconds() < 24 * 3600
 
     if is_recent_data:
@@ -57,7 +58,7 @@ def get_stock_change(ticker):
             trend = "מַמְשִׁיךְ לְרֶדֶת"
         return round(pct, 2), round(current, 2), trend
     else:
-        # Get data from last trading day
+        # Get data from last trading day for weekend report
         last_close = hist["Close"].iloc[-1]
         prev_close = hist["Close"].iloc[-2]
         pct = ((last_close - prev_close) / prev_close) * 100
@@ -89,28 +90,27 @@ def get_market_report():
         "הָדוֹלָר": "USDILS=X"
     }
 
-    # New dictionary for US tickers to manage their specific behavior
     us_indices = {
-        "מדד האס אנד פי חמש מאות": "^GSPC",
-        "הנאסדק": "^IXIC",
-        "הדאו ג'ונס": "^DJI",
-        "הראסל": "^RUT"
+        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": "^GSPC",
+        "הָנָאסְדָק": "^IXIC",
+        "הָדָאוֹ ג'וֹנְס": "^DJI",
+        "הָרָאסֵל": "^RUT"
     }
     us_etfs = {
-        "מדד האס אנד פי חמש מאות": "SPY",
-        "הנאסדק": "QQQ",
-        "הדאו ג'ונס": "DIA",
-        "הראסל": "IWM"
+        "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": "SPY",
+        "הָנָאסְדָק": "QQQ",
+        "הָדָאוֹ ג'וֹנְס": "DIA",
+        "הָרָאסֵל": "IWM"
     }
     us_stocks = {
-        "אפל": "AAPL",
-        "אנבידיה": "NVDA",
-        "אמזון": "AMZN",
-        "טסלה": "TSLA"
+        "אָפֵּל": "AAPL",
+        "אֵנְבִידְיָה": "NVDA",
+        "אָמָזוֹן": "AMZN",
+        "טֵסְלָה": "TSLA"
     }
     
     now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
-    is_us_market_closed_weekend = now.weekday() in [5, 6]  # 5=Saturday, 6=Sunday
+    is_us_market_closed_weekend = now.weekday() in [5, 6]
 
     hour_24 = now.hour
     hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
@@ -121,7 +121,6 @@ def get_market_report():
     report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
     results = {}
 
-    # Get data for non-US tickers
     for name, ticker in tickers.items():
         try:
             pct, price, trend = get_stock_change(ticker)
@@ -129,19 +128,23 @@ def get_market_report():
         except Exception:
             results[name] = {"pct": None, "price": None, "trend": None}
 
-    # Get data for US tickers based on market status
+    # Fetch US market data based on whether it's the weekend or not
     if is_us_market_closed_weekend:
-        us_tickers_to_fetch = us_indices
+        us_indices_and_stocks_to_fetch = {**us_indices, **us_stocks}
+        for name, ticker in us_indices_and_stocks_to_fetch.items():
+            try:
+                pct, price, trend = get_stock_change(ticker)
+                results[name] = {"pct": pct, "price": price, "trend": trend}
+            except Exception:
+                results[name] = {"pct": None, "price": None, "trend": None}
     else:
-        # Use ETFs for pre/after market data
-        us_tickers_to_fetch = {**us_etfs, **us_stocks}
-
-    for name, ticker in us_tickers_to_fetch.items():
-        try:
-            pct, price, trend = get_stock_change(ticker)
-            results[name] = {"pct": pct, "price": price, "trend": trend}
-        except Exception:
-            results[name] = {"pct": None, "price": None, "trend": None}
+        us_etfs_and_stocks_to_fetch = {**us_etfs, **us_stocks}
+        for name, ticker in us_etfs_and_stocks_to_fetch.items():
+            try:
+                pct, price, trend = get_stock_change(ticker)
+                results[name] = {"pct": pct, "price": price, "trend": trend}
+            except Exception:
+                results[name] = {"pct": None, "price": None, "trend": None}
             
     open_time = now.replace(hour=9, minute=59)
     close_time = now.replace(hour=17, minute=25)
@@ -168,9 +171,7 @@ def get_market_report():
     ny_open = now.replace(hour=16, minute=30)
     ny_close = now.replace(hour=23, minute=0)
 
-    # US market report logic
     report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
-    
     if is_us_market_closed_weekend:
         report += "הַבּוּרְסוֹת סְגוּרוֹת, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הָאַחֲרוֹן.\n"
         for name in us_indices.keys():
@@ -199,19 +200,15 @@ def get_market_report():
                 direction = format_direction(d["pct"], d["trend"])
                 report += f"{name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵעוֹמֵד עָל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
 
-    # Stocks report logic
     report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
     
     if is_us_market_closed_weekend:
         report += "הָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לַמִסְחָר הָאַחֲרוֹן.\n"
-        for stock_name, ticker in us_stocks.items():
-            try:
-                pct, price, trend = get_stock_change(ticker)
-                if pct is not None:
-                    verb = "עָלָה" if pct > 0 else "יָרָד"
-                    report += f"מֵנָיָת {stock_name} {verb} בֵּ{number_to_hebrew_words(abs(pct))} אָחוּז וֵנִסְחֵרָה בֵּשָׁעָר שֵׁל {number_to_hebrew_words(price)} דוֹלָר.\n"
-            except:
-                pass # Skip if data is not available
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
+            if d and d["pct"] is not None and d["price"] is not None:
+                verb = "עָלָה" if d["pct"] > 0 else "יָרָד"
+                report += f"מֵנָיָת {stock_name} {verb} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרָה בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
     elif now < ny_open:
         report += "הָבּוּרְסָה טֵרֵם נִפְתֵחָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמוּקְדָם.\n"
         for stock_name in us_stocks.keys():
@@ -219,36 +216,4 @@ def get_market_report():
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
                 report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
-    elif now > ny_close:
-        report += "הָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
-        for stock_name in us_stocks.keys():
-            d = results.get(stock_name)
-            if d and d["pct"] is not None:
-                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
-    else:
-        for stock_name in us_stocks.keys():
-            d = results.get(stock_name)
-            if d and d["pct"] is not None and d["price"] is not None:
-                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
-                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
-
-    # Crypto and other assets
-    report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
-    for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
-        d = results.get(name)
-        if d and d["pct"] is not None and d["price"] is not None:
-            direction = format_direction(d["pct"], d["trend"], is_female=(name == "הָאִיתֵרְיוּם"))
-            report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
-
-    report += "\nעוֹד בָּעוֹלָם:\n"
-    for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
-        d = results.get(name)
-        if d and d["pct"] is not None and d["price"] is not None:
-            direction = format_direction(d["pct"], d["trend"])
-            report += f"{name} {direction} וֵנִמְצָא עָל {number_to_hebrew_words(d['price'])} {unit}.\n"
-
-    return report
-
-def generate_market_text():
-    return get_market_report()
+    elif now >
