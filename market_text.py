@@ -4,6 +4,9 @@ import pytz
 from num2words import num2words
 import pandas as pd
 
+# ----------------------------
+# עזר: המרת מספרים למילים בעברית
+# ----------------------------
 def number_to_hebrew_words(number):
     """
     Converts a number (including decimals) to Hebrew words.
@@ -25,7 +28,7 @@ def number_to_hebrew_words(number):
 
 def get_time_segment(now):
     """
-    Returns the time segment of the day in Hebrew.
+    מחזיר את פלח הזמן בעברית.
     """
     hour = now.hour
     if 6 <= hour < 12:
@@ -37,51 +40,65 @@ def get_time_segment(now):
     else:
         return "בָּלָיְלָה"
 
+# ----------------------------
+# שליפת שינוי/רמה לטיקר
+# ----------------------------
 def get_stock_change(ticker):
     """
-    Fetches stock data and calculates the percentage change and trend.
-    Handles both live data and last trading day's data.
+    Fetches stock/ETF/index/FX/commodity data and calculates the percentage change and trend.
+    Robust to tz-aware/naive indices and short histories (2+ candles).
+    Returns: (pct, price, trend) where pct/price may be None.
     """
     stock = yf.Ticker(ticker)
     try:
         hist = stock.history(period="10d", interval="1d")
     except Exception:
         return None, None, None
-    
-    if len(hist) < 3:
+
+    if hist is None or hist.empty or "Close" not in hist.columns:
         return None, None, None
 
-    hist = hist.dropna(subset=['Close'])
-    
-    now_israel_time = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
-    
-    if hist.empty:
+    hist = hist.dropna(subset=["Close"])
+
+    # צריך לפחות 2 נרות כדי לחשב שינוי
+    if len(hist) < 2:
+        if len(hist) == 1:
+            price_only = float(hist["Close"].iloc[-1])
+            return None, round(price_only, 2), None
         return None, None, None
 
-    # כאן לא משנים את מנגנון החישוב – נשאר כמו שהיה
-    last_data_time = hist.index[-1].tz_localize(pytz.timezone("America/New_York")).astimezone(pytz.timezone("Asia/Jerusalem"))
-    is_recent_data = (now_israel_time - last_data_time).total_seconds() < 24 * 3600
+    # טיפול בטיימזון באופן חסין
+    jerusalem = pytz.timezone("Asia/Jerusalem")
+    ts = hist.index[-1]
+    try:
+        if getattr(ts, "tzinfo", None) is not None:
+            # tz-aware (לרוב UTC) → המרה לישראל
+            last_data_time = ts.tz_convert(jerusalem) if hasattr(ts, "tz_convert") else ts.astimezone(jerusalem)
+        else:
+            # tz-naive → נניח UTC
+            ts_utc = pytz.utc.localize(ts)
+            last_data_time = ts_utc.astimezone(jerusalem)
+    except Exception:
+        last_data_time = None  # אם יש תקלה, נוותר על בדיקת "רעננות"
 
-    if is_recent_data:
-        current = hist["Close"].iloc[-1]
-        prev = hist["Close"].iloc[-2]
-        before_prev = hist["Close"].iloc[-3]
-        pct = ((current - prev) / prev) * 100
-        trend = None
+    current = float(hist["Close"].iloc[-1])
+    prev = float(hist["Close"].iloc[-2])
+    pct = ((current - prev) / prev) * 100 if prev != 0 else 0.0
+
+    # טרנד רק אם יש 3 נרות לפחות
+    trend = None
+    if len(hist) >= 3:
+        before_prev = float(hist["Close"].iloc[-3])
         if current > prev > before_prev:
             trend = "מַמְשִׁיךְ לַעֲלוֹת"
         elif current < prev < before_prev:
             trend = "מַמְשִׁיךְ לְרֶדֶת"
-        return round(pct, 2), round(current, 2), trend
-    else:
-        last_close = hist["Close"].iloc[-1]
-        prev_close = hist["Close"].iloc[-2]
-        pct = ((last_close - prev_close) / prev_close) * 100
-        return round(pct, 2), round(last_close, 2), None
+
+    return round(pct, 2), round(current, 2), trend
 
 def format_direction(pct, trend, threshold=1.5, is_female=False):
     """
-    Formats the direction of change (up/down) in Hebrew.
+    ניסוח כיוון (עולה/יורד) בעברית.
     """
     if pct is None:
         return "לֹא זָמִין"
@@ -96,13 +113,22 @@ def format_direction(pct, trend, threshold=1.5, is_female=False):
         base = base.replace("עוֹלֶה", "עוֹלָה").replace("יוֹרֵד", "יוֹרֶדֶת").replace("מַמְשִׁיךְ", "מַמְשִׁיכָה")
     return base
 
+# ----------------------------
+# דוח תמונת שוק
+# ----------------------------
 def get_market_report():
     """
-    Generates a full market report in Hebrew based on current market status.
+    מייצר טקסט תמונת שוק בהתאם לכללים:
+    - פתוח: מדדי מקור + "ועומד כעת על..."
+    - סגור עם מוקדם/מאוחר: ETF בלבד + "הבורסה סגורה... הנתונים לפי תעודות סל..." ורק שינוי
+    - סגור לגמרי: מדדי מקור בלבד + "הנתונים מתייחסים לשער הסגירה הקודם" ורק רמה
+    - מניות: כנ״ל כמו מדדים
+    - קריפטו/סחורות/דולר: תמיד רמה + שינוי
     """
+    # ישראל/קריפטו/סחורות/דולר
     tickers = {
         "תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש": "^TA125.TA",
-        "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש": "TA35.TA",
+        "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש": "^TA35.TA",
         "הָבִּיטְקוֹיְן": "BTC-USD",
         "הָאִיתֵרְיוּם": "ETH-USD",
         "הָזָהָב": "GC=F",
@@ -110,7 +136,7 @@ def get_market_report():
         "הָדוֹלָר": "USDILS=X"
     }
 
-    # מדדי מקור
+    # מדדי מקור בארה"ב
     us_indices = {
         "מָדָד הָאֵס אֵנְד פִּי חָמֵש מֵאוֹת": "^GSPC",
         "הָנָאסְדָק": "^IXIC",
@@ -124,6 +150,7 @@ def get_market_report():
         "הָדָאוֹ ג'וֹנְס": "DIA",
         "הָרָאסֵל": "IWM"
     }
+    # מניות בולטות
     us_stocks = {
         "אָפֵּל": "AAPL",
         "אֵנְבִידְיָה": "NVDA",
@@ -132,7 +159,7 @@ def get_market_report():
     }
     
     now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
-    # שבת/ראשון בישראל -> הבורסות בארה"ב סגורות לגמרי
+    # שבת/ראשון בישראל → סגור לגמרי בארה"ב
     is_us_market_closed_weekend = now.weekday() in [5, 6]
 
     hour_24 = now.hour
@@ -144,15 +171,15 @@ def get_market_report():
     report = f"הִנֵה תְמוּנַת הַשׁוּק נָכוֹן לֵשָעָה {hour_str} {segment}.\n\n"
     results = {}
 
-    # שעות פתיחה/סגירה ניו-יורק לפי אסיה/ירושלים
+    # שעות מסחר ניו-יורק לפי שעון ישראל
     ny_open = now.replace(hour=16, minute=30, second=0, microsecond=0)
     ny_close = now.replace(hour=23, minute=0, second=0, microsecond=0)
 
-    # בחירת מה לשלוף למדדי ארה"ב לפי מצב השוק
+    # בחירת מקור נתונים למדדי ארה"ב
     if is_us_market_closed_weekend:
         indices_source = us_indices          # סגור לגמרי → מדדי מקור
     elif now < ny_open or now > ny_close:
-        indices_source = us_etfs             # מסחר מוקדם/מאוחר → ETF
+        indices_source = us_etfs             # מוקדם/מאוחר → ETF
     else:
         indices_source = us_indices          # פתוח → מדדי מקור
 
@@ -161,14 +188,17 @@ def get_market_report():
     all_tickers_to_fetch.update(indices_source)
     all_tickers_to_fetch.update(us_stocks)
     
+    # שליפה
     for name, ticker in all_tickers_to_fetch.items():
         try:
             pct, price, trend = get_stock_change(ticker)
             results[name] = {"pct": pct, "price": price, "trend": trend}
         except Exception:
             results[name] = {"pct": None, "price": None, "trend": None}
-            
+
+    # ----------------------------
     # ישראל
+    # ----------------------------
     open_time = now.replace(hour=9, minute=59, second=0, microsecond=0)
     close_time = now.replace(hour=17, minute=25, second=0, microsecond=0)
     ta125 = results.get("תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש", {})
@@ -210,7 +240,9 @@ def get_market_report():
                 f"אָחוּז וֵעוֹמֵד כְּעַת עַל {number_to_hebrew_words(d.get('price', 0))} נְקוּדוֹת.\n"
             )
 
+    # ----------------------------
     # בורסות העולם (ארה"ב)
+    # ----------------------------
     report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
     if is_us_market_closed_weekend:
         # סגור לגמרי → מדדי מקור + רק רמה
@@ -254,10 +286,12 @@ def get_market_report():
             else:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר {name}.\n"
 
+    # ----------------------------
     # מניות ארה"ב
+    # ----------------------------
     report += "\nבֵּשוּק הָמֵנָיוֹת:\n"
     if is_us_market_closed_weekend:
-        # סגור לגמרי → רק רמה (בלי שינוי)
+        # סגור לגמרי → רק רמה
         report += "הַבּוּרְסָה סְגוּרָה, הַנְתוּנִים מִתְיַחֲסִים לְשַׁעַר הַסְּגִירָה הַקּוֹדֵם.\n"
         for stock_name in us_stocks.keys():
             d = results.get(stock_name, {})
@@ -298,7 +332,9 @@ def get_market_report():
             else:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מֵנָיָת {stock_name}.\n"
 
+    # ----------------------------
     # קריפטו – תמיד שינוי + רמה
+    # ----------------------------
     report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
     for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
         d = results.get(name, {})
@@ -311,7 +347,9 @@ def get_market_report():
         else:
             report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר {name}.\n"
 
+    # ----------------------------
     # סחורות/דולר – תמיד שינוי + רמה
+    # ----------------------------
     report += "\nעוֹד בָּעוֹלָם:\n"
     for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
         d = results.get(name, {})
