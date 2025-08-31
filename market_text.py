@@ -5,6 +5,10 @@ from num2words import num2words
 import pandas as pd
 
 def number_to_hebrew_words(number):
+    """
+    Converts a number (including decimals) to Hebrew words.
+    Example: 12.45 -> 'שְׁתֵים עֶשְׂרֵה נְקוּדָה אַרְבָּעִים וֵחָמֵש'
+    """
     rounded_number = round(number, 2)
     parts = str(rounded_number).split(".")
     integer_part = int(parts[0])
@@ -23,6 +27,9 @@ def number_to_hebrew_words(number):
         return num2words(integer_part, lang='he')
 
 def get_time_segment(now):
+    """
+    Returns the time segment of the day in Hebrew.
+    """
     hour = now.hour
     if 6 <= hour < 12:
         return "בָּבּוֹקֵר"
@@ -34,6 +41,10 @@ def get_time_segment(now):
         return "בָּלָיְלָה"
 
 def get_stock_change(ticker):
+    """
+    Fetches stock data and calculates the percentage change and trend.
+    Handles both live data and last trading day's data.
+    """
     stock = yf.Ticker(ticker)
     hist = stock.history(period="10d", interval="1d")
     
@@ -42,9 +53,11 @@ def get_stock_change(ticker):
 
     hist = hist.dropna(subset=['Close'])
     
-    # Check if the last data point is from today's trading session
-    # We check if the last data point is within the last 24 hours
-    is_recent_data = (datetime.datetime.now(pytz.timezone("Asia/Jerusalem")) - hist.index[-1].tz_localize("Asia/Jerusalem")).total_seconds() < 24 * 3600
+    # Check if the last data point is from a recent trading session
+    now_israel_time = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
+    last_data_time = hist.index[-1].tz_localize(pytz.timezone("America/New_York")).astimezone(pytz.timezone("Asia/Jerusalem"))
+    
+    is_recent_data = (now_israel_time - last_data_time).total_seconds() < 24 * 3600
 
     if is_recent_data:
         current = hist["Close"].iloc[-1]
@@ -64,8 +77,10 @@ def get_stock_change(ticker):
         pct = ((last_close - prev_close) / prev_close) * 100
         return round(pct, 2), round(last_close, 2), None
 
-
 def format_direction(pct, trend, threshold=1.5, is_female=False):
+    """
+    Formats the direction of change (up/down) in Hebrew.
+    """
     if pct is None:
         return "לֹא זָמִין"
     if trend:
@@ -80,6 +95,9 @@ def format_direction(pct, trend, threshold=1.5, is_female=False):
     return base
 
 def get_market_report():
+    """
+    Generates a full market report in Hebrew based on current market status.
+    """
     tickers = {
         "תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵש": "^TA125.TA",
         "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵש": "TA35.TA",
@@ -128,10 +146,9 @@ def get_market_report():
         except Exception:
             results[name] = {"pct": None, "price": None, "trend": None}
 
-    # Fetch US market data based on whether it's the weekend or not
     if is_us_market_closed_weekend:
-        us_indices_and_stocks_to_fetch = {**us_indices, **us_stocks}
-        for name, ticker in us_indices_and_stocks_to_fetch.items():
+        us_tickers_and_stocks_to_fetch = {**us_indices, **us_stocks}
+        for name, ticker in us_tickers_and_stocks_to_fetch.items():
             try:
                 pct, price, trend = get_stock_change(ticker)
                 results[name] = {"pct": pct, "price": price, "trend": trend}
@@ -216,4 +233,35 @@ def get_market_report():
             if d and d["pct"] is not None:
                 direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
                 report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
-    elif now >
+    elif now > ny_close:
+        report += "הָבּוּרְסָה סְגוּרָה, הָנֵתוּנִים מִתְיָחָסִים לָמִסְחָר הָמֵאוּחָר.\n"
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
+            if d and d["pct"] is not None:
+                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
+                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז.\n"
+    else:
+        for stock_name in us_stocks.keys():
+            d = results.get(stock_name)
+            if d and d["pct"] is not None and d["price"] is not None:
+                direction = format_direction(d["pct"], d["trend"], threshold=5, is_female=True)
+                report += f"מֵנָיָת {stock_name} {direction} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחֵרֵת בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+
+    report += "\nבֵּגִיזְרָת הָקְרִיפְּטוֹ:\n"
+    for name in ["הָבִּיטְקוֹיְן", "הָאִיתֵרְיוּם"]:
+        d = results.get(name)
+        if d and d["pct"] is not None and d["price"] is not None:
+            direction = format_direction(d["pct"], d["trend"], is_female=(name == "הָאִיתֵרְיוּם"))
+            report += f"{name} {direction} ב{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִסְחָר בֵּשָׁעָר שֵׁל {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
+
+    report += "\nעוֹד בָּעוֹלָם:\n"
+    for name, unit in [("הָזָהָב", "לֵאוֹנְקִיָה"), ("הָנֵפְט", "לֵחָבִית"), ("הָדוֹלָר", "שְׁקָלִים")]:
+        d = results.get(name)
+        if d and d["pct"] is not None and d["price"] is not None:
+            direction = format_direction(d["pct"], d["trend"])
+            report += f"{name} {direction} וֵנִמְצָא עָל {number_to_hebrew_words(d['price'])} {unit}.\n"
+
+    return report
+
+def generate_market_text():
+    return get_market_report()
