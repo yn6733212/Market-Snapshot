@@ -46,15 +46,21 @@ def get_stock_change(ticker):
     Handles both live data and last trading day's data.
     """
     stock = yf.Ticker(ticker)
-    hist = stock.history(period="10d", interval="1d")
+    try:
+        hist = stock.history(period="10d", interval="1d")
+    except Exception:
+        return None, None, None
     
     if len(hist) < 3:
         return None, None, None
 
     hist = hist.dropna(subset=['Close'])
     
-    # Check if the last data point is from a recent trading session
     now_israel_time = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
+    
+    if hist.empty:
+        return None, None, None
+
     last_data_time = hist.index[-1].tz_localize(pytz.timezone("America/New_York")).astimezone(pytz.timezone("Asia/Jerusalem"))
     
     is_recent_data = (now_israel_time - last_data_time).total_seconds() < 24 * 3600
@@ -71,7 +77,6 @@ def get_stock_change(ticker):
             trend = "מַמְשִׁיךְ לְרֶדֶת"
         return round(pct, 2), round(current, 2), trend
     else:
-        # Get data from last trading day for weekend report
         last_close = hist["Close"].iloc[-1]
         prev_close = hist["Close"].iloc[-2]
         pct = ((last_close - prev_close) / prev_close) * 100
@@ -147,16 +152,16 @@ def get_market_report():
             results[name] = {"pct": None, "price": None, "trend": None}
 
     if is_us_market_closed_weekend:
-        us_tickers_and_stocks_to_fetch = {**us_indices, **us_stocks}
-        for name, ticker in us_tickers_and_stocks_to_fetch.items():
+        us_tickers_to_fetch = {**us_indices, **us_stocks}
+        for name, ticker in us_tickers_to_fetch.items():
             try:
                 pct, price, trend = get_stock_change(ticker)
                 results[name] = {"pct": pct, "price": price, "trend": trend}
             except Exception:
                 results[name] = {"pct": None, "price": None, "trend": None}
     else:
-        us_etfs_and_stocks_to_fetch = {**us_etfs, **us_stocks}
-        for name, ticker in us_etfs_and_stocks_to_fetch.items():
+        us_tickers_to_fetch = {**us_etfs, **us_stocks}
+        for name, ticker in us_tickers_to_fetch.items():
             try:
                 pct, price, trend = get_stock_change(ticker)
                 results[name] = {"pct": pct, "price": price, "trend": trend}
@@ -193,7 +198,7 @@ def get_market_report():
         report += "הַבּוּרְסוֹת סְגוּרוֹת, הַנְתוּנִים מִתְיַחֲסִים לַמִסְחָר הָאַחֲרוֹן.\n"
         for name in us_indices.keys():
             d = results.get(name)
-            if d and d["pct"] is not None:
+            if d and d["pct"] is not None and d["price"] is not None:
                 verb = "עָלָה" if d["pct"] > 0 else "יָרָד"
                 report += f"{name} {verb} בֵּ{number_to_hebrew_words(abs(d['pct']))} אָחוּז וֵנִנְעָל בֵּרָמָה שֵׁל {number_to_hebrew_words(d['price'])} נְקוּדוֹת.\n"
     elif now < ny_open:
