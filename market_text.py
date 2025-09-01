@@ -4,46 +4,120 @@ import pytz
 from num2words import num2words
 import pandas as pd
 
-# * המרת מספרים למילים (עברית)
-def number_to_hebrew_words(number):
+# ===== מילונים עם ניקוד (ניתן להרחיב/לשנות חופשי) =====
+# זמן (שעות/דקות) — לרוב צורת נקבה (דקות), ושעות 1–12
+NUM_WORDS_TIME = {
+    0: "אֵפֶס",
+    1: "אַחַת",
+    2: "שְׁתַּיִם",
+    3: "שָׁלוֹשׁ",
+    4: "אַרְבַּע",
+    5: "חָמֵשׁ",
+    6: "שֵׁשׁ",
+    7: "שֶׁבַע",
+    8: "שְׁמוֹנֶה",
+    9: "תֵּשַׁע",
+    10: "עֶשֶׂר",
+    11: "אַחַת־עֶשְׂרֵה",
+    12: "שְׁתֵּים־עֶשְׂרֵה",
+    20: "עֶשְׂרִים",
+    30: "שְׁלוֹשִׁים",
+    40: "אַרְבָּעִים",
+    50: "חֲמִשִּׁים",
+}
+
+# ערכים (מדדים/מחירים/אחוזים) — צורת זכר נפוצה
+NUM_WORDS_VALUE = {
+    0: "אֵפֶס",
+    1: "אֶחָד",
+    2: "שְׁנַיִם",
+    3: "שְׁלוֹשָׁה",
+    4: "אַרְבָּעָה",
+    5: "חֲמִשָּׁה",
+    6: "שִׁשָּׁה",
+    7: "שִׁבְעָה",
+    8: "שְׁמוֹנָה",
+    9: "תִּשְׁעָה",
+    10: "עֶשֶׂר",
+    11: "אַחַד־עָשָׂר",
+    12: "שְׁנֵים־עָשָׂר",
+    13: "שְׁלוֹשָׁה־עָשָׂר",
+    14: "אַרְבָּעָה־עָשָׂר",
+    15: "חֲמִשָּׁה־עָשָׂר",
+    16: "שִׁשָּׁה־עָשָׂר",
+    17: "שִׁבְעָה־עָשָׂר",
+    18: "שְׁמוֹנָה־עָשָׂר",
+    19: "תִּשְׁעָה־עָשָׂר",
+    20: "עֶשְׂרִים",
+    30: "שְׁלוֹשִׁים",
+    40: "אַרְבָּעִים",
+    50: "חֲמִשִּׁים",
+    60: "שִׁשִּׁים",
+    70: "שִׁבְעִים",
+    80: "שְׁמוֹנִים",
+    90: "תִּשְׁעִים",
+}
+
+def _lookup_or_fallback_int(n: int, context: str) -> str:
+    """
+    מנסה להחזיר מהמילון המתאים; אם אין — נופל ל־num2words(he).
+    שים לב: אם תרצה צורות מדויקות למספרים "מורכבים" (כמו 23, 57),
+    פשוט הוסף אותם למילון הרצוי.
+    """
+    d = NUM_WORDS_TIME if context == "time" else NUM_WORDS_VALUE
+    if n in d:
+        return d[n]
+    # נפילה חזרה לפענוח אוטומטי
+    return num2words(n, lang='he')
+
+# * המרת מספרים למילים (עברית) עם הקשר
+def number_to_hebrew_words(number, context: str = "value"):
     """
     כללים:
     - 4 ספרות ומעלה: ללא נקודה עשרונית.
     - 3 ספרות: עם ספרה עשרונית אחת בלבד (אם 0 — לא מוסיפים נקודה).
     - 1–2 ספרות: רגיל (עד שתי ספרות עשרוניות).
+    context: "time" (שעות/דקות) או "value" (מדדים/מחירים/אחוזים).
     """
-    abs_int = int(abs(number))
+    # טיפול במינוס
+    sign = ""
+    if isinstance(number, (int, float)) and number < 0:
+        sign = "מִינוּס "
+    abs_val = abs(number)
+
+    abs_int = int(abs_val)
     digits = len(str(abs_int))
 
     # 4+ ספרות: רק שלם (מעוגל)
     if digits >= 4:
-        integer_words = num2words(int(round(number)), lang='he')
-        return integer_words
+        integer_words = _lookup_or_fallback_int(int(round(abs_val)), context)
+        return f"{sign}{integer_words}"
 
     # 3 ספרות: ספרה עשרונית אחת
     if digits == 3:
-        val = round(number, 1)  # עיגול לעשירית
+        val = round(abs_val, 1)  # עיגול לעשירית
         integer_part = int(val)
-        # ספרה אחת אחרי הנקודה
-        frac_digit = int(round(abs(val) * 10)) % 10
-        integer_words = num2words(integer_part, lang='he')
+        frac_digit = int(round(val * 10)) % 10  # ספרה אחת אחרי הנקודה
+        integer_words = _lookup_or_fallback_int(integer_part, context)
         if frac_digit == 0:
-            return integer_words
-        decimal_words = num2words(frac_digit, lang='he')
-        return f"{integer_words} נְקוּדָה {decimal_words}"
+            return f"{sign}{integer_words}"
+        decimal_words = _lookup_or_fallback_int(frac_digit, "value")
+        return f"{sign}{integer_words} נְקוּדָה {decimal_words}"
 
     # 1–2 ספרות: עד שתי ספרות עשרוניות
-    rounded_number = round(number, 2)
+    rounded_number = round(abs_val, 2)
     integer_part_str, decimal_part_str = f"{rounded_number:.2f}".split(".")
     integer_part = int(integer_part_str)
-    if int(decimal_part_str) > 0:
-        integer_words = num2words(integer_part, lang='he')
-        decimal_words = num2words(int(decimal_part_str), lang='he')
+    integer_words = _lookup_or_fallback_int(integer_part, context)
+
+    decimal_part = int(decimal_part_str)
+    if decimal_part > 0:
+        decimal_words = _lookup_or_fallback_int(decimal_part, "value")
         if integer_part == 0:
-            return f"אֵפֵס נְקוּדָה {decimal_words}"
-        return f"{integer_words} נְקוּדָה {decimal_words}"
+            return f"{sign}אֵפֶס נְקוּדָה {decimal_words}"
+        return f"{sign}{integer_words} נְקוּדָה {decimal_words}"
     else:
-        return num2words(integer_part, lang='he')
+        return f"{sign}{integer_words}"
 
 # * פלח זמן כללי
 def get_time_segment(now):
@@ -165,11 +239,11 @@ def get_market_report():
     now = datetime.datetime.now(pytz.timezone("Asia/Jerusalem"))
     is_us_market_closed_weekend = now.weekday() in [5, 6]  # * שבת/ראשון → ארה״ב סגוּרה
 
-    # * זמן פתיח מנוקד
+    # * זמן פתיח עם מילון זמן
     hour_24 = now.hour
     hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
     minute = now.minute
-    hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַּקוֹת"
+    hour_str = f"{number_to_hebrew_words(hour_12, context='time')} וְ{number_to_hebrew_words(minute, context='time')} דַּקוֹת"
     segment = get_time_segment(now)
     report = f"הִנֵה תְמוּנַת הַשׁוּק, נָכוֹן לְשָׁעָה {hour_str} {segment}.\n\n"
 
@@ -213,7 +287,7 @@ def get_market_report():
         report += (
             "בְּיִשְׂרָאֵל:\n"
             f"הַבּוּרְסָה טֶרֶם נִפְתֵחָה וּצְפוּיָה לְהִפָּתָח בְּעוֹד "
-            f"{number_to_hebrew_words(hours)} שָׁעוֹת וְ-{number_to_hebrew_words(minutes)} דָקוֹת.\n"
+            f"{number_to_hebrew_words(hours, context='time')} שָׁעוֹת וְ-{number_to_hebrew_words(minutes, context='time')} דָקוֹת.\n"
         )
     elif now > close_time:
         report += "בְּיִשְׂרָאֵל:\nהַבּוּרְסָה נִסְגְּרָה.\n"
@@ -231,7 +305,7 @@ def get_market_report():
             )
     else:
         report += "בְּיִשְׂרָאֵל:\n"
-        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵשׁ", "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵשׁ"]:
+        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵשׁ", "תֵל אָבִיב שְׁלוֹשִים וֵחָמֵשׁ"]:
             d = results.get(name, {})
             if d.get("pct") is None or d.get("price") is None:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד {name}.\n"
