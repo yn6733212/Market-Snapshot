@@ -6,13 +6,39 @@ import pandas as pd
 
 # * המרת מספרים למילים (עברית)
 def number_to_hebrew_words(number):
-    rounded_number = round(number, 2)
-    parts = str(rounded_number).split(".")
-    integer_part = int(parts[0])
-    if len(parts) > 1 and int(parts[1]) > 0:
-        decimal_part = int(parts[1])
+    """
+    כללים:
+    - 4 ספרות ומעלה: ללא נקודה עשרונית.
+    - 3 ספרות: עם ספרה עשרונית אחת בלבד (אם 0 — לא מוסיפים נקודה).
+    - 1–2 ספרות: רגיל (עד שתי ספרות עשרוניות).
+    """
+    abs_int = int(abs(number))
+    digits = len(str(abs_int))
+
+    # 4+ ספרות: רק שלם (מעוגל)
+    if digits >= 4:
+        integer_words = num2words(int(round(number)), lang='he')
+        return integer_words
+
+    # 3 ספרות: ספרה עשרונית אחת
+    if digits == 3:
+        val = round(number, 1)  # עיגול לעשירית
+        integer_part = int(val)
+        # חילוץ ספרה אחת אחרי הנקודה
+        frac_digit = int(round(abs(val) * 10)) % 10
         integer_words = num2words(integer_part, lang='he')
-        decimal_words = num2words(decimal_part, lang='he')
+        if frac_digit == 0:
+            return integer_words
+        decimal_words = num2words(frac_digit, lang='he')
+        return f"{integer_words} נְקוּדָה {decimal_words}"
+
+    # 1–2 ספרות: כמו קודם (עד שתי ספרות עשרוניות)
+    rounded_number = round(number, 2)
+    integer_part_str, decimal_part_str = f"{rounded_number:.2f}".split(".")
+    integer_part = int(integer_part_str)
+    if int(decimal_part_str) > 0:
+        integer_words = num2words(integer_part, lang='he')
+        decimal_words = num2words(int(decimal_part_str), lang='he')
         if integer_part == 0:
             return f"אֵפֵס נְקוּדָה {decimal_words}"
         return f"{integer_words} נְקוּדָה {decimal_words}"
@@ -168,7 +194,7 @@ def get_market_report():
     open_time = now.replace(hour=9, minute=59, second=0, microsecond=0)
     close_time = now.replace(hour=17, minute=25, second=0, microsecond=0)
     ta125 = results.get("תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵשׁ", {})
-    ta35 = results.get("תֵל אָבִיב שְׁלוֹשִים וֵחָמֵשׁ", {})
+    ta35 = results.get("תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵשׁ", {})
 
     if now < open_time:
         delta = open_time - now
