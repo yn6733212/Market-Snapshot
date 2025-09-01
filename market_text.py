@@ -133,7 +133,7 @@ def get_market_report():
     hour_24 = now.hour
     hour_12 = hour_24 if hour_24 <= 12 else hour_24 - 12
     minute = now.minute
-    hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַּקּוֹת"
+    hour_str = f"{number_to_hebrew_words(hour_12)} וְ{number_to_hebrew_words(minute)} דַּקוֹת"
     segment = get_time_segment(now)
     report = f"הִנֵה תְמוּנַת הַשׁוּק, נָכוֹן לְשָׁעָה {hour_str} {segment}.\n\n"
 
@@ -209,7 +209,7 @@ def get_market_report():
     # * בורסות העולם (ארה״ב)
     report += "\nבֵּבּוּרְסוֹת הָעוֹלָם:\n"
     if is_us_market_closed_weekend:
-        report += "הַבּוּרְסָה בְּאַרְצוֹת הַבְּרִית סְגוּרָה, וְהַנֵתוּנִים מִתְיַחֲסִים לְשַׁעָרֵי הַסְגִירָה הָאַחְרוֹנִים.\n"
+        report += "הַבּוּרְסָה בְּאַרְצוֹת הַבְּרִית סְגוּרָה, הַנֵתוּנִים מִתְיַחֲסִים לְשַׁעָרֵי הַסְגִירָה הָאַחְרוֹנִים.\n"
         for name in us_indices.keys():
             d = results.get(name, {})
             if d.get("price") is not None:
@@ -217,7 +217,7 @@ def get_market_report():
             else:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר {name}.\n"
     elif now < ny_open:
-        report += "הַבּוּרְסָה בְּנְיוּ־יוֹרְק סְגוּרָה וּצְפוּיָה לְהִפָּתֵחַ לְאַחַר מִכֵּן הַנְּתוּנִים מְבוּסָסִים עַל מִסְחָר מוּקְדָם בְּתְעוּדוֹת סַל.\n"
+        report += "הַבּוּרְסָה בווֹל סְטְרִיט סְגוּרָה וּצְפוּיָה לְהִפָּתֵחַ בֵּהֵמְשֵך הָיוֹם, הַנְּתוּנִים מְבוּסָסִים עַל מִסְחָר מוּקְדָם בְּתְעוּדוֹת סַל.\n"
         for name in us_etfs.keys():
             d = results.get(name, {})
             if d.get("pct") is not None:
@@ -226,7 +226,7 @@ def get_market_report():
             else:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר {name}.\n"
     elif now > ny_close:
-        report += "הַבּוּרְסָה בְּנְיוּ־יוֹרְק נִסְגְּרָה הַנְּתוּנִים מְבוּסָסִים עַל מִסְחָר מְאֻחָר בְּתְעוּדוֹת סַל.\n"
+        report += "הַבּוּרְסָה בְּנְיוּ־יוֹרְק נִסְגְּרָה, הַנְּתוּנִים מְבוּסָסִים עַל מִסְחָר מְאֻחָר בְּתְעוּדוֹת סַל.\n"
         for name in us_etfs.keys():
             d = results.get(name, {})
             if d.get("pct") is not None:
