@@ -195,7 +195,7 @@ def get_market_report():
             )
     else:
         report += "בְּיִשְׂרָאֵל:\n"
-        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵשׁ", "תֵּל אָבִיב שְׁלוֹשִׁים וֵחָמֵשׁ"]:
+        for name in ["תֵל אָבִיב מֵאָה עֵשְׂרִים וֵחָמֵשׁ", "תֵל אָבִיב שְׁלוֹשִׁים וֵחָמֵשׁ"]:
             d = results.get(name, {})
             if d.get("pct") is None or d.get("price") is None:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד {name}.\n"
