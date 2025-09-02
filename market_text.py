@@ -293,7 +293,7 @@ def get_market_report():
         minutes = remainder // 60
         report += (
             "בְּיִשְׂרָאֵל:\n"
-            f"הַבּוּרְסָה טֶרֶם נִפְתֵחָה וּצְפוּיָה לְהִפָּתָח בְּעוֹד "
+            f"הַבּוּרְסָה טֶרֶם נִפְתֵחָה וּצְפוּיָה לֵהִיפָּתָח בְּעוֹד "
             f"{number_to_hebrew_words(hours, context='time')} שָׁעוֹת וְ-{number_to_hebrew_words(minutes, context='time')} דָקוֹת.\n"
         )
     elif now > close_time:
@@ -334,16 +334,16 @@ def get_market_report():
             else:
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד ה{name}.\n"
     elif now < ny_open:
-        report += "וָול סְטְרִיט סְגוּרָה כָּרֶגַע; הַנְּתוּנִים מִמִּסְחָר מוּקְדָם בְּתְעוּדוֹת סַל.\n"
+        report += "הָמִסְחָר בָּבּוּרְסָה עָדָין לֹא נִפְתָח; הַנְּתוּנִים מִתָיָחָסִים לֵמִסְחָר מוּקְדָם בְּתְעוּדוֹת סַל.\n"
         for name in us_etfs.keys():
             d = results.get(name, {})
             if d.get("pct") is not None:
                 direction = format_direction(d.get("pct"), d.get("trend"))
                 report += f"מַדָד ה{name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז.\n"
             else:
-                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד ה{name}.\n"
+                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד הָ{name}.\n"
     elif now > ny_close:
-        report += "נְיוּ־יוֹרְק נִסְגְּרָה; הַנְּתוּנִים מִמִּסְחָר מְאֻחָר בְּתְעוּדוֹת סַל.\n"
+        report += "הָבּוּרָסָה בֵּנוּ יוֹרְק נִסְגְּרָה; הַנְּתוּנִים מִמִּסְחָר מְאֻחָר בְּתְעוּדוֹת סַל.\n"
         for name in us_etfs.keys():
             d = results.get(name, {})
             if d.get("pct") is not None:
@@ -364,47 +364,47 @@ def get_market_report():
                 report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מַדָד ה{name}.\n"
 
     # * שוק המניות — "מניית ..."
-    report += "\nשׁוּק הַמְּנָיוֹת:\n"
+    report += "\nבֵּשׁוּק הַמְּנָיוֹת:\n"
     if is_us_market_closed_weekend:
-        report += "הַבּוּרְסָה סְגוּרָה; הַנְּתוּנִים לִשְׁעָרֵי הַסְגִירָה הָאַחֲרוֹנִים.\n"
+        report += "הַבּוּרְסָה סְגוּרָה; הַנְּתוּנִים מִיתְיָחָסִים לִשְׁעָרֵי הַסְגִירָה הָאַחֲרוֹנִים.\n"
         for stock_name in us_stocks.keys():
             d = results.get(stock_name, {})
             if d.get("price") is not None:
                 report += f"מניית {stock_name} נִסְגְּרָה בְּשַׁעַר {number_to_hebrew_words(d['price'])} דוֹלָר.\n"
             else:
-                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מניית {stock_name}.\n"
+                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מֵנָיית {stock_name}.\n"
     elif now < ny_open:
         report += "הַבּוּרְסָה סְגוּרָה כָּרֶגַע; הַנְּתוּנִים הֵם מִמִּסְחָר מוּקְדָם.\n"
         for stock_name in us_stocks.keys():
             d = results.get(stock_name, {})
             if d.get("pct") is not None:
                 direction = format_direction(d.get("pct"), d.get("trend"), threshold=5, is_female=True)
-                report += f"מניית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז.\n"
+                report += f"מֵנָיָית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז.\n"
             else:
-                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מניית {stock_name}.\n"
+                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מֵנָיָית {stock_name}.\n"
     elif now > ny_close:
         report += "הַבּוּרְסָה נִסְגְּרָה; הַנְּתוּנִים מִמִּסְחָר מְאֻחָר.\n"
         for stock_name in us_stocks.keys():
             d = results.get(stock_name, {})
             if d.get("pct") is not None:
                 direction = format_direction(d.get("pct"), d.get("trend"), threshold=5, is_female=True)
-                report += f"מניית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז.\n"
+                report += f"מֵנָיָית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז.\n"
             else:
-                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מניית {stock_name}.\n"
+                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מֵנָיָית {stock_name}.\n"
     else:
         for stock_name in us_stocks.keys():
             d = results.get(stock_name, {})
             if d.get("pct") is not None and d.get("price") is not None:
                 direction = format_direction(d.get("pct"), d.get("trend"), threshold=5, is_female=True)
                 report += (
-                    f"מניית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז "
+                    f"מֵנָיָית {stock_name} {direction} בְּ-{number_to_hebrew_words(abs(d.get('pct', 0)))} אָחוּז "
                     f"וְנִסְחֶרֶת כָּעֵת בִּשְׁעַר {number_to_hebrew_words(d.get('price', 0))} דוֹלָר.\n"
                 )
             else:
-                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מניית {stock_name}.\n"
+                report += f"לֹא נִמְצְאוּ נְתוּנִים עֲבוּר מֵנָיָית {stock_name}.\n"
 
     # * קְרִיפְּטוֹ — הקדמה + "הַבִּיטְקוֹיִן / הָאִיתֵרְיוּם"
-    report += "\nבִּגְּזֶרֶת הַקְרִיפְּטוֹ:\n"
+    report += "\nבֵּגִזְרָת הַקְרִיפְּטוֹ:\n"
     for internal_name, display_name in [("בִּיטְקוֹיִן", "הַבִּיטְקוֹיִן"), ("אִיתֵרְיוּם", "הָאִיתֵרְיוּם")]:
         d = results.get(internal_name, {})
         if d.get("pct") is not None and d.get("price") is not None:
